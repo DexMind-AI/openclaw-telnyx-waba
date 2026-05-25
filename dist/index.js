@@ -11,6 +11,8 @@ const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 const DEFAULT_MEDIA_MAX_BYTES = 25 * 1024 * 1024;
 const DEFAULT_MEDIA_DOWNLOAD_TIMEOUT_MS = 10_000;
 const ALLOWED_TELNYX_MEDIA_HOST_SUFFIXES = [".telnyx.com", ".telnyxcdn.com", ".telnyx.net"];
+const DIAGNOSTIC_SHAPE_MAX_DEPTH = 6;
+const DIAGNOSTIC_SHAPE_MAX_KEYS = 40;
 
 function env(name, fallback = "") {
   const value = process.env[name];
@@ -24,6 +26,12 @@ function envInt(name, fallback) {
 
 function normalizePhoneNumber(value) {
   return String(value ?? "").replace(/[^\d+]/g, "");
+}
+
+function maskPhoneNumber(value) {
+  const normalized = normalizePhoneNumber(value);
+  if (!normalized) return "unknown";
+  return `${normalized.slice(0, 3)}...${normalized.slice(-2)}`;
 }
 
 function allowedNumbers() {
@@ -115,6 +123,43 @@ function writeJson(res, statusCode, body) {
   res.end(payload);
 }
 
+function diagnosticValueType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return `array(${value.length})`;
+  return typeof value;
+}
+
+function payloadShape(value, depth = 0, state = { keys: 0 }, seen = new WeakSet()) {
+  if (!value || typeof value !== "object") return diagnosticValueType(value);
+  if (seen.has(value)) return "[Circular]";
+  if (depth >= DIAGNOSTIC_SHAPE_MAX_DEPTH) return `[${diagnosticValueType(value)}]`;
+  if (state.keys >= DIAGNOSTIC_SHAPE_MAX_KEYS) return "[Truncated]";
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.slice(0, 3).map((item) => payloadShape(item, depth + 1, state, seen));
+  }
+
+  const shape = {};
+  for (const key of Object.keys(value).sort()) {
+    if (state.keys >= DIAGNOSTIC_SHAPE_MAX_KEYS) {
+      shape["..."] = "[Truncated]";
+      break;
+    }
+    state.keys += 1;
+    shape[key] = payloadShape(value[key], depth + 1, state, seen);
+  }
+  return shape;
+}
+
+function diagnosticPayloadShape(payload) {
+  try {
+    return JSON.stringify(payloadShape(payload));
+  } catch {
+    return '"[Unserializable]"';
+  }
+}
+
 function payloadEvent(body) {
   const data = body && typeof body.data === "object" && !Array.isArray(body.data) ? body.data : {};
   const payload = data.payload && typeof data.payload === "object" && !Array.isArray(data.payload) ? data.payload : {};
@@ -158,6 +203,27 @@ function textValue(value) {
     value.list_reply ||
     value.reply;
   return textValue(interactiveReply);
+}
+
+function collectInteractiveTexts(value, seen = new WeakSet()) {
+  if (!value || typeof value !== "object") return [];
+  if (seen.has(value)) return [];
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectInteractiveTexts(item, seen));
+  }
+
+  const reply =
+    value.interactive?.button_reply ||
+    value.interactive?.list_reply ||
+    value.button_reply ||
+    value.list_reply ||
+    value.reply;
+  const own = textValue(reply?.title || reply?.description || reply?.body || reply?.text);
+
+  const nested = Object.values(value).flatMap((item) => collectInteractiveTexts(item, seen));
+  return own ? [own, ...nested] : nested;
 }
 
 function scalarText(value) {
@@ -527,8 +593,9 @@ async function extractWhatsappMessage(payload) {
     : null;
   const directText = textValue(payload.text || payload.body);
   const partsText = Array.isArray(payload.parts) && payload.parts.length > 0 ? textValue(payload.parts) : null;
+  const interactiveText = collectInteractiveTexts(payload).filter(Boolean).join("\n");
   const whatsappText = !location && !attachmentsSummary ? textValue(payload.whatsapp_message) : null;
-  let text = [directText || partsText || whatsappText, location, attachmentsSummary].filter(Boolean).join("\n\n");
+  let text = [directText || partsText || whatsappText || interactiveText, location, attachmentsSummary].filter(Boolean).join("\n\n");
   if (!text && media) {
     text = "The user sent a WhatsApp media attachment, but Telnyx did not include readable attachment metadata.";
   }
@@ -772,7 +839,9 @@ async function replyToWhatsapp(fromNumber, text) {
 async function replyToWhatsappPayload(fromNumber, payload) {
   const { text } = await extractWhatsappMessage(payload);
   if (!text) {
-    console.warn(`[telnyx-waba] Ignoring WhatsApp message from ${fromNumber}: no text or downloadable attachment metadata`);
+    console.warn(
+      `[telnyx-waba] Ignoring WhatsApp message from ${maskPhoneNumber(fromNumber)}: no text or downloadable attachment metadata; payload shape=${diagnosticPayloadShape(payload)}`,
+    );
     return;
   }
   await replyToWhatsapp(fromNumber, text);

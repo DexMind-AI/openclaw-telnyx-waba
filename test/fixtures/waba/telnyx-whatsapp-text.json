@@ -1,0 +1,22 @@
+{
+  "name": "Telnyx WhatsApp text webhook",
+  "source": "Telnyx WhatsApp webhook examples",
+  "payload": {
+    "from": {
+      "phone_number": "+15551234567"
+    },
+    "to": {
+      "phone_number": "+15557654321"
+    },
+    "type": "whatsapp",
+    "whatsapp_message": {
+      "type": "text",
+      "text": {
+        "body": "hello from waba"
+      }
+    }
+  },
+  "expectedTextIncludes": [
+    "hello from waba"
+  ]
+}

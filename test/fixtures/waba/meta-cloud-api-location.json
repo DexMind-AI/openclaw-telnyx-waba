@@ -1,0 +1,33 @@
+{
+  "name": "Meta Cloud API location payload",
+  "source": "Meta Cloud API messages[].location payload family",
+  "payload": {
+    "entry": [
+      {
+        "changes": [
+          {
+            "value": {
+              "messages": [
+                {
+                  "from": "15551234567",
+                  "type": "location",
+                  "location": {
+                    "latitude": "48.8566",
+                    "longitude": "2.3522",
+                    "name": "Paris",
+                    "address": "Paris, France"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectedTextIncludes": [
+    "latitude 48.8566, longitude 2.3522",
+    "Name: Paris",
+    "Address: Paris, France"
+  ]
+}

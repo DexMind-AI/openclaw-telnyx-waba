@@ -1,0 +1,63 @@
+{
+  "name": "Meta-style contacts, reaction, and interactive reply",
+  "source": "Meta Cloud API contacts/reaction/interactive payload families",
+  "payload": {
+    "entry": [
+      {
+        "changes": [
+          {
+            "value": {
+              "messages": [
+                {
+                  "type": "contacts",
+                  "contacts": [
+                    {
+                      "name": {
+                        "formatted_name": "Ada Lovelace"
+                      },
+                      "phones": [
+                        {
+                          "phone": "+441234"
+                        }
+                      ],
+                      "emails": [
+                        {
+                          "email": "ada@example.com"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "reaction",
+                  "reaction": {
+                    "emoji": "👍",
+                    "message_id": "wamid.123"
+                  }
+                },
+                {
+                  "type": "interactive",
+                  "interactive": {
+                    "button_reply": {
+                      "title": "Yes"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectedTextIncludes": [
+    "Contact card",
+    "Ada Lovelace",
+    "+441234",
+    "ada@example.com",
+    "Reaction",
+    "Emoji: 👍",
+    "wamid.123",
+    "Yes"
+  ]
+}

@@ -23,6 +23,16 @@ When Telnyx provides a media URL, the plugin downloads it into OpenClaw's inboun
 
 Media downloads use a defense-in-depth URL policy adapted from Telnyx's official SMS/MMS OpenClaw plugin: only HTTPS Telnyx media hosts are accepted, credentials in URLs are rejected, and localhost/private/metadata-service/IP-literal targets are blocked.
 
+## Compatibility Corpus
+
+The test suite includes a WABA fixture corpus in `test/fixtures/waba/` covering published Telnyx and Meta-style payload families:
+
+- Telnyx Messaging `message.received` with `media[]` URLs.
+- Telnyx WhatsApp media objects using `link` or `id`.
+- Meta Cloud API `entry[].changes[].value.messages[]` wrappers for text, image, location, contact, reaction, and interactive replies.
+
+When a future webhook extracts no agent-visible text, the plugin logs only a redacted payload key/type shape. Add that shape as a fixture before changing parser behavior.
+
 ## Environment
 
 Required for WABA:

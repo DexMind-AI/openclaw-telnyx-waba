@@ -25,6 +25,7 @@ async function loadPluginInternals() {
     globalThis.__telnyxWabaTest = {
       extractWhatsappMessage,
       handleWhatsappWebhook,
+      diagnosticPayloadShape,
       validateMediaUrl,
       publicWebhookUrl,
     };
@@ -204,4 +205,26 @@ test("WABA webhook delegates SMS payloads away from WABA processing", async () =
       process.env.TELNYX_SMS_DELEGATE_URL = previousDelegateUrl;
     }
   }
+});
+
+test("diagnostic payload shape does not include scalar message contents", async () => {
+  const { diagnosticPayloadShape } = await loadPluginInternals();
+  const shape = diagnosticPayloadShape({
+    whatsapp: {
+      messages: [
+        {
+          type: "image",
+          image: {
+            caption: "private caption",
+            id: "private-media-id",
+          },
+        },
+      ],
+    },
+  });
+
+  assert.match(shape, /"caption":"string"/);
+  assert.match(shape, /"id":"string"/);
+  assert.doesNotMatch(shape, /private caption/);
+  assert.doesNotMatch(shape, /private-media-id/);
 });

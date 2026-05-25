@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.8
+
+- Added a published-shape WABA compatibility corpus covering Telnyx and Meta-style text, media, location, contact, reaction, and interactive payload families.
+- Added privacy-safe unknown-payload diagnostics that log only payload key/type shape when extraction produces no agent-visible text.
+- Preserved nested interactive button/list replies as agent-visible text.
+
 ## 0.1.7
 
 - Widened WABA media detection and attachment collection to find image/video/audio/document/sticker payloads under nested Telnyx/Meta wrapper objects.

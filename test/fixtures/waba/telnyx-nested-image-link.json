@@ -1,0 +1,32 @@
+{
+  "name": "Nested WhatsApp image with Telnyx media link",
+  "source": "Observed Telnyx/Meta wrapper variant",
+  "payload": {
+    "from": {
+      "phone_number": "+15551234567"
+    },
+    "type": "whatsapp",
+    "whatsapp": {
+      "messages": [
+        {
+          "type": "image",
+          "image": {
+            "id": "a521caac-4127-4801-997d-f954af4d7154",
+            "link": "https://media.telnyx.com/messages/nested-image.jpg",
+            "mime_type": "image/jpeg",
+            "caption": "What do you see here"
+          }
+        }
+      ]
+    }
+  },
+  "expectedTextIncludes": [
+    "Image attachment",
+    "Caption: What do you see here",
+    "MIME type: image/jpeg",
+    "Local media path:",
+    "Media URI: media://inbound/",
+    "URL: https://media.telnyx.com/messages/nested-image.jpg",
+    "Media ID: a521caac-4127-4801-997d-f954af4d7154"
+  ]
+}

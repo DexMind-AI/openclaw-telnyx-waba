@@ -1,0 +1,39 @@
+{
+  "name": "Meta Cloud API image id-only payload",
+  "source": "Meta Cloud API messages[].image payload family",
+  "payload": {
+    "entry": [
+      {
+        "changes": [
+          {
+            "value": {
+              "messages": [
+                {
+                  "from": "15551234567",
+                  "type": "image",
+                  "image": {
+                    "id": "wamid-media-1",
+                    "mime_type": "image/jpeg",
+                    "sha256": "def456",
+                    "caption": "receipt photo"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectedTextIncludes": [
+    "Image attachment",
+    "Caption: receipt photo",
+    "MIME type: image/jpeg",
+    "Media ID: wamid-media-1",
+    "SHA-256: def456"
+  ],
+  "expectedTextExcludes": [
+    "Local media path:",
+    "Media URI:"
+  ]
+}

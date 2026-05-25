@@ -1,0 +1,27 @@
+{
+  "name": "Telnyx MMS-style media array",
+  "source": "Telnyx Messaging message.received media[] webhook shape",
+  "payload": {
+    "from": {
+      "phone_number": "+15551234567"
+    },
+    "type": "MMS",
+    "text": "see this",
+    "media": [
+      {
+        "url": "https://media.telnyx.com/messages/example-image.png",
+        "content_type": "image/png",
+        "sha256": "abc123",
+        "size": 102400
+      }
+    ]
+  },
+  "expectedTextIncludes": [
+    "see this",
+    "URL: https://media.telnyx.com/messages/example-image.png",
+    "MIME type: image/png",
+    "Local media path:",
+    "Media URI: media://inbound/",
+    "SHA-256: abc123"
+  ]
+}
