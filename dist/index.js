@@ -1,11 +1,12 @@
 import net from "node:net";
 import { createPublicKey, randomUUID, verify } from "node:crypto";
-import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+import { defineChannelPluginEntry, createChatChannelPlugin, createChannelPluginBase } from "openclaw/plugin-sdk/channel-core";
+import { createHybridChannelConfigBase } from "openclaw/plugin-sdk/channel-config-helpers";
+import { dispatchInboundDirectDmWithRuntime } from "openclaw/plugin-sdk/direct-dm";
 import { saveRemoteMedia } from "openclaw/plugin-sdk/media-runtime";
 
 const WHATSAPP_ROUTE_PATH = "/telnyx/whatsapp";
 const VOICE_ROUTE_PATH = "/telnyx/voice";
-const DEFAULT_GATEWAY_URL = "http://127.0.0.1:18789";
 const DEFAULT_SMS_DELEGATE_URL = "http://127.0.0.1:18789/telnyx-sms/webhook";
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 const DEFAULT_MEDIA_MAX_BYTES = 25 * 1024 * 1024;
@@ -16,6 +17,7 @@ const DIAGNOSTIC_SHAPE_MAX_KEYS = 40;
 const MESSAGE_CONTEXT_LIMIT = 500;
 const MESSAGE_CONTEXT_TEXT_LIMIT = 500;
 const messageContextById = new Map();
+let channelRuntime;
 
 function env(name, fallback = "") {
   const value = process.env[name];
@@ -366,6 +368,28 @@ function rememberObservedMessageContexts(value, seen = new WeakSet()) {
 
 function rememberMessageContext(payload, text) {
   if (hasMessageContent(payload)) rememberMessageId(payload.id, text);
+}
+
+function firstMessageId(value, seen = new WeakSet()) {
+  if (!value || typeof value !== "object") return null;
+  if (seen.has(value)) return null;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const id = firstMessageId(item, seen);
+      if (id) return id;
+    }
+    return null;
+  }
+
+  const own = scalarText(value.message_id || value.messageId || value.id);
+  if (own && hasMessageContent(value)) return own;
+  for (const nested of Object.values(value)) {
+    const id = firstMessageId(nested, seen);
+    if (id) return id;
+  }
+  return null;
 }
 
 function finiteNumber(value) {
@@ -753,44 +777,20 @@ function publicWebhookUrl(path) {
   return publicBaseUrl ? `${publicBaseUrl.replace(/\/$/, "")}${path}` : undefined;
 }
 
-async function askAgent(text, sessionId, channel) {
-  const token = env("OPENCLAW_GATEWAY_TOKEN");
-  if (!token) return "The OpenClaw agent is not connected yet.";
+function setTelnyxWabaRuntime(runtime) {
+  channelRuntime = runtime;
+}
 
-  const agent = env("OPENCLAW_AGENT", "main");
-  const gatewayUrl = env("OPENCLAW_GATEWAY_URL", DEFAULT_GATEWAY_URL);
-  const channelName = "WhatsApp";
-  const assistantName = env("OPENCLAW_ASSISTANT_NAME", "the configured OpenClaw agent");
-  const response = await fetch(`${gatewayUrl.replace(/\/$/, "")}/v1/chat/completions`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: env("OPENCLAW_MODEL", `openclaw/${agent}`),
-      agent,
-      messages: [
-        {
-          role: "system",
-          content:
-            `You are ${assistantName} replying by ${channelName}. Be brief, direct, and conversational. Keep continuity within this chat when possible. If the user sends attachments with local media paths or media URIs, inspect them with the available media tools before answering when the content matters. Use visible details such as captions, filenames, MIME types, contact fields, coordinates, media IDs, local paths, media URIs, and URLs. If the actual attachment content is not available after inspection, say exactly what you can see and ask what they want you to do with it.`,
-        },
-        { role: "user", content: text },
-      ],
-      metadata: { session_id: sessionId, source: "telnyx-waba" },
-    }),
-  });
+function listTelnyxWabaAccountIds() {
+  return ["default"];
+}
 
-  if (!response.ok) {
-    throw new Error(`OpenClaw reply failed: HTTP ${response.status} ${await response.text()}`);
-  }
+function defaultTelnyxWabaAccountId() {
+  return "default";
+}
 
-  const data = await response.json();
-  const content = data?.choices?.[0]?.message?.content;
-  return typeof content === "string" && content.trim()
-    ? content.trim()
-    : "I received that, but I could not produce a reply.";
+function resolveTelnyxWabaAccount(_cfg, accountId = "default") {
+  return { accountId: accountId || "default" };
 }
 
 async function sendWhatsapp(to, text) {
@@ -823,6 +823,53 @@ async function sendWhatsapp(to, text) {
   }
   return response.json();
 }
+
+const telnyxWabaChannelPlugin = createChatChannelPlugin({
+  base: createChannelPluginBase({
+    id: "telnyx-waba",
+    meta: {
+      label: "Telnyx WABA",
+      selectionLabel: "Telnyx WhatsApp Business API",
+      docsPath: "/channels/telnyx-waba",
+      blurb: "WhatsApp Business API via Telnyx Messaging webhooks.",
+    },
+    capabilities: {
+      chatTypes: ["direct"],
+      media: true,
+      reply: false,
+      reactions: true,
+      edit: false,
+    },
+    config: createHybridChannelConfigBase({
+      sectionKey: "telnyx-waba",
+      listAccountIds: listTelnyxWabaAccountIds,
+      resolveAccount: resolveTelnyxWabaAccount,
+      defaultAccountId: defaultTelnyxWabaAccountId,
+      clearBaseFields: [],
+    }),
+  }),
+  threading: { topLevelReplyToMode: "none" },
+  messaging: {
+    resolveSessionConversation: ({ rawId }) => ({ conversationId: rawId }),
+  },
+  outbound: {
+    base: {
+      deliveryMode: "direct",
+      chunkerMode: "text",
+      sendFormattedText: async ({ to, text }) => {
+        const result = await sendWhatsapp(to, text);
+        return [{ channel: "telnyx-waba", messageId: result?.data?.id || result?.id || "" }];
+      },
+    },
+    attachedResults: {
+      channel: "telnyx-waba",
+      sendText: async ({ to, text }) => {
+        const result = await sendWhatsapp(to, text);
+        return { messageId: result?.data?.id || result?.id || "" };
+      },
+    },
+  },
+});
 
 async function telnyxPost(path, body) {
   const apiKey = env("TELNYX_API_KEY");
@@ -971,23 +1018,48 @@ async function delegateSmsWebhook(req, res, rawBody) {
   return true;
 }
 
-async function replyToWhatsapp(fromNumber, text) {
-  const reply = await askAgent(text, `telnyx-whatsapp:${normalizePhoneNumber(fromNumber)}`, "whatsapp");
-  await sendWhatsapp(fromNumber, reply);
-}
+async function dispatchWhatsappPayload(cfg, fromNumber, payload) {
+  if (!channelRuntime) {
+    throw new Error("Telnyx WABA channel runtime is not initialized");
+  }
 
-async function replyToWhatsappPayload(fromNumber, payload) {
-  const { text } = await extractWhatsappMessage(payload);
+  const { text, toNumber } = await extractWhatsappMessage(payload);
   if (!text) {
     console.warn(
       `[telnyx-waba] Ignoring WhatsApp message from ${maskPhoneNumber(fromNumber)}: no text or downloadable attachment metadata; payload shape=${diagnosticPayloadShape(payload)}`,
     );
     return;
   }
-  await replyToWhatsapp(fromNumber, text);
+
+  const sender = normalizePhoneNumber(fromNumber);
+  await dispatchInboundDirectDmWithRuntime({
+    cfg,
+    runtime: channelRuntime,
+    channel: "telnyx-waba",
+    channelLabel: "WhatsApp",
+    accountId: null,
+    peer: { kind: "direct", id: sender },
+    senderId: sender,
+    senderAddress: fromNumber,
+    recipientAddress: toNumber || env("TELNYX_PHONE_NUMBER"),
+    conversationLabel: fromNumber,
+    rawBody: text,
+    bodyForAgent: text,
+    messageId: firstMessageId(payload) || "",
+    deliver: async (reply) => {
+      const replyText = scalarText(reply?.text);
+      if (replyText) await sendWhatsapp(fromNumber, replyText);
+    },
+    onRecordError: (err) => {
+      console.error("[telnyx-waba] session record error:", err);
+    },
+    onDispatchError: (err, info) => {
+      console.error(`[telnyx-waba] dispatch error (${info?.kind || "unknown"}):`, err);
+    },
+  });
 }
 
-async function handleWhatsappWebhook(req, res) {
+async function handleWhatsappWebhook(req, res, cfg = {}) {
   if (req.method !== "POST") {
     res.statusCode = 405;
     res.end("Method Not Allowed");
@@ -1040,7 +1112,7 @@ async function handleWhatsappWebhook(req, res) {
   }
 
   setImmediate(() => {
-    replyToWhatsappPayload(fromNumber, payload).catch((err) => {
+    dispatchWhatsappPayload(cfg, fromNumber, payload).catch((err) => {
       console.error(`[telnyx-waba] Failed to process WhatsApp message from ${fromNumber}:`, err);
     });
   });
@@ -1048,17 +1120,23 @@ async function handleWhatsappWebhook(req, res) {
   return true;
 }
 
-export default definePluginEntry({
+export default defineChannelPluginEntry({
   id: "telnyx-waba",
   name: "Telnyx WABA",
   description: "Telnyx Voice AI Assistant and WhatsApp Business API integration for OpenClaw",
-  register(api) {
+  plugin: telnyxWabaChannelPlugin,
+  setRuntime: (runtime) => {
+    setTelnyxWabaRuntime(runtime);
+  },
+  registerFull(api) {
     api.registerHttpRoute({
       path: WHATSAPP_ROUTE_PATH,
       auth: "plugin",
       match: "exact",
       replaceExisting: true,
-      handler: handleWhatsappWebhook,
+      handler: async (req, res) => {
+        await handleWhatsappWebhook(req, res, api.config);
+      },
     });
     api.registerHttpRoute({
       path: VOICE_ROUTE_PATH,

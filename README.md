@@ -2,7 +2,7 @@
 
 OpenClaw gateway plugin for Telnyx WhatsApp Business API and Telnyx Voice AI Assistant webhooks.
 
-This package exists for deployments that use Telnyx WABA instead of OpenClaw's official WhatsApp Web/Baileys channel. It registers gateway-local HTTP routes and relays validated inbound messages into an OpenClaw agent through the gateway's OpenAI-compatible API.
+This package exists for deployments that use Telnyx WABA instead of OpenClaw's official WhatsApp Web/Baileys channel. It registers gateway-local HTTP routes and dispatches validated inbound messages through OpenClaw's standard channel/direct-DM runtime.
 
 ## Routes
 
@@ -41,17 +41,12 @@ Required for WABA:
 TELNYX_API_KEY=KEY...
 TELNYX_PUBLIC_KEY=<base64-or-hex-ed25519-public-key>
 TELNYX_PHONE_NUMBER=+15551234567
-OPENCLAW_GATEWAY_TOKEN=<gateway-token>
 ```
 
 Useful optional values:
 
 ```sh
 PUBLIC_BASE_URL=https://agent.example.com
-OPENCLAW_GATEWAY_URL=http://127.0.0.1:18789
-OPENCLAW_AGENT=main
-OPENCLAW_MODEL=openclaw/main
-OPENCLAW_ASSISTANT_NAME="the configured OpenClaw agent"
 TELNYX_WHATSAPP_ALLOWED_NUMBERS=+15551234567,+15557654321
 TELNYX_SMS_DELEGATE_URL=http://127.0.0.1:18789/telnyx-sms/webhook
 TELNYX_WABA_DOWNLOAD_ATTACHMENTS=true

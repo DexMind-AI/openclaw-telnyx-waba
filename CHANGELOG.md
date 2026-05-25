@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0
+
+- Converted WABA inbound handling from a custom OpenAI-compatible chat-completions relay to OpenClaw's standard channel/direct-DM runtime.
+- Removed WABA's `OPENCLAW_GATEWAY_TOKEN`, `OPENCLAW_AGENT`, and `OPENCLAW_MODEL` dependency path; model selection and session continuity are now owned by OpenClaw.
+- WABA direct chats now use normalized WhatsApp sender IDs as OpenClaw conversation IDs, matching the official Telnyx SMS channel pattern.
+
+## 0.1.10
+
+- Added bounded per-session conversation history for WABA agent calls so each WhatsApp sender keeps continuity across stateless webhook deliveries.
+- Agent requests now include prior user/assistant turns for the same normalized WhatsApp sender while keeping different senders isolated.
+
 ## 0.1.9
 
 - Added bounded observed-message context for WABA reactions and replies.

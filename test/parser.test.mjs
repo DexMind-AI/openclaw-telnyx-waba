@@ -6,8 +6,29 @@ import test from "node:test";
 async function loadPluginInternals() {
   let code = await fs.readFile(new URL("../dist/index.js", import.meta.url), "utf8");
   code = code.replace(
-    'import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";\n',
-    "const definePluginEntry = (entry) => entry;\n",
+    'import { defineChannelPluginEntry, createChatChannelPlugin, createChannelPluginBase } from "openclaw/plugin-sdk/channel-core";\n',
+    [
+      "const defineChannelPluginEntry = (entry) => entry;",
+      "const createChatChannelPlugin = (plugin) => plugin;",
+      "const createChannelPluginBase = (base) => base;",
+      "",
+    ].join("\n"),
+  );
+  code = code.replace(
+    'import { createHybridChannelConfigBase } from "openclaw/plugin-sdk/channel-config-helpers";\n',
+    "const createHybridChannelConfigBase = (config) => config;\n",
+  );
+  code = code.replace(
+    'import { dispatchInboundDirectDmWithRuntime } from "openclaw/plugin-sdk/direct-dm";\n',
+    [
+      "const dispatchInboundDirectDmWithRuntime = async (params) => {",
+      "  globalThis.__telnyxWabaDispatches = globalThis.__telnyxWabaDispatches || [];",
+      "  globalThis.__telnyxWabaDispatches.push(params);",
+      '  await params.deliver({ text: "agent reply" });',
+      '  return { route: { sessionKey: "test-session" }, storePath: "/tmp/session.jsonl", ctxPayload: {} };',
+      "};",
+      "",
+    ].join("\n"),
   );
   code = code.replace(
     'import { saveRemoteMedia } from "openclaw/plugin-sdk/media-runtime";\n',
@@ -20,10 +41,12 @@ async function loadPluginInternals() {
       "",
     ].join("\n"),
   );
-  code = code.replace("export default definePluginEntry({", "globalThis.__plugin = definePluginEntry({");
+  code = code.replace("export default defineChannelPluginEntry({", "globalThis.__plugin = defineChannelPluginEntry({");
   code += `
     globalThis.__telnyxWabaTest = {
       extractWhatsappMessage,
+      dispatchWhatsappPayload,
+      setTelnyxWabaRuntime,
       handleWhatsappWebhook,
       diagnosticPayloadShape,
       validateMediaUrl,
@@ -246,6 +269,65 @@ test("reactions and replies resolve messages earlier in the same webhook payload
   assert.match(message.text, /Reacted message: Same payload parent text\./);
   assert.match(message.text, /Replied-to message: Same payload parent text\./);
   assert.match(message.text, /Same payload reply body\./);
+});
+
+test("WABA dispatches inbound messages through the OpenClaw direct-DM runtime", async () => {
+  const previousApiKey = process.env.TELNYX_API_KEY;
+  const previousPhoneNumber = process.env.TELNYX_PHONE_NUMBER;
+  process.env.TELNYX_API_KEY = "test-api-key";
+  process.env.TELNYX_PHONE_NUMBER = "+15557654321";
+  const previousFetch = globalThis.fetch;
+  const outbound = [];
+  globalThis.__telnyxWabaDispatches = [];
+  globalThis.fetch = async (url, init) => {
+    outbound.push({ url: String(url), body: JSON.parse(init.body) });
+    return {
+      ok: true,
+      async json() {
+        return { data: { id: "outbound-message-id" } };
+      },
+    };
+  };
+
+  try {
+    const { dispatchWhatsappPayload, setTelnyxWabaRuntime } = await loadPluginInternals();
+    setTelnyxWabaRuntime({ channel: {} });
+    await dispatchWhatsappPayload({}, "+1 (555) 123-4567", {
+      id: "wamid.inbound",
+      from: { phone_number: "+15551234567" },
+      to: { phone_number: "+15557654321" },
+      type: "text",
+      text: "hello with native channel context",
+    });
+
+    assert.equal(globalThis.__telnyxWabaDispatches.length, 1);
+    const dispatch = globalThis.__telnyxWabaDispatches[0];
+    assert.equal(dispatch.channel, "telnyx-waba");
+    assert.equal(dispatch.channelLabel, "WhatsApp");
+    assert.deepEqual(dispatch.peer, { kind: "direct", id: "+15551234567" });
+    assert.equal(dispatch.senderId, "+15551234567");
+    assert.equal(dispatch.rawBody, "hello with native channel context");
+    assert.equal(dispatch.bodyForAgent, "hello with native channel context");
+    assert.equal(dispatch.messageId, "wamid.inbound");
+
+    assert.equal(outbound.length, 1);
+    assert.equal(outbound[0].url, "https://api.telnyx.com/v2/messages/whatsapp");
+    assert.equal(outbound[0].body.to, "+1 (555) 123-4567");
+    assert.equal(outbound[0].body.whatsapp_message.text.body, "agent reply");
+  } finally {
+    globalThis.fetch = previousFetch;
+    delete globalThis.__telnyxWabaDispatches;
+    if (previousApiKey === undefined) {
+      delete process.env.TELNYX_API_KEY;
+    } else {
+      process.env.TELNYX_API_KEY = previousApiKey;
+    }
+    if (previousPhoneNumber === undefined) {
+      delete process.env.TELNYX_PHONE_NUMBER;
+    } else {
+      process.env.TELNYX_PHONE_NUMBER = previousPhoneNumber;
+    }
+  }
 });
 
 test("WABA webhook delegates SMS payloads away from WABA processing", async () => {

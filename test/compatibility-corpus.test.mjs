@@ -6,8 +6,21 @@ import test from "node:test";
 async function loadPluginInternals() {
   let code = await fs.readFile(new URL("../dist/index.js", import.meta.url), "utf8");
   code = code.replace(
-    'import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";\n',
-    "const definePluginEntry = (entry) => entry;\n",
+    'import { defineChannelPluginEntry, createChatChannelPlugin, createChannelPluginBase } from "openclaw/plugin-sdk/channel-core";\n',
+    [
+      "const defineChannelPluginEntry = (entry) => entry;",
+      "const createChatChannelPlugin = (plugin) => plugin;",
+      "const createChannelPluginBase = (base) => base;",
+      "",
+    ].join("\n"),
+  );
+  code = code.replace(
+    'import { createHybridChannelConfigBase } from "openclaw/plugin-sdk/channel-config-helpers";\n',
+    "const createHybridChannelConfigBase = (config) => config;\n",
+  );
+  code = code.replace(
+    'import { dispatchInboundDirectDmWithRuntime } from "openclaw/plugin-sdk/direct-dm";\n',
+    "const dispatchInboundDirectDmWithRuntime = async () => ({});\n",
   );
   code = code.replace(
     'import { saveRemoteMedia } from "openclaw/plugin-sdk/media-runtime";\n',
@@ -20,7 +33,7 @@ async function loadPluginInternals() {
       "",
     ].join("\n"),
   );
-  code = code.replace("export default definePluginEntry({", "globalThis.__plugin = definePluginEntry({");
+  code = code.replace("export default defineChannelPluginEntry({", "globalThis.__plugin = defineChannelPluginEntry({");
   code += `
     globalThis.__telnyxWabaCorpusTest = {
       extractWhatsappMessage,

@@ -3,6 +3,16 @@
   "activation": {
     "onStartup": true
   },
+  "channelConfigs": {
+    "telnyx-waba": {
+      "label": "Telnyx WABA",
+      "description": "WhatsApp Business API via Telnyx Messaging webhooks.",
+      "schema": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
   "channelEnvVars": {
     "telnyx-waba": [
       "PUBLIC_BASE_URL",
@@ -16,9 +26,7 @@
       "TELNYX_SMS_DELEGATE_URL",
       "TELNYX_WABA_DOWNLOAD_ATTACHMENTS",
       "TELNYX_WABA_MEDIA_MAX_BYTES",
-      "TELNYX_WABA_MEDIA_DOWNLOAD_TIMEOUT_MS",
-      "OPENCLAW_ASSISTANT_NAME",
-      "OPENCLAW_GATEWAY_TOKEN"
+      "TELNYX_WABA_MEDIA_DOWNLOAD_TIMEOUT_MS"
     ]
   },
   "configSchema": {
