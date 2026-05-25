@@ -33,11 +33,15 @@ async function loadPluginInternals() {
   code = code.replace(
     'import { saveRemoteMedia } from "openclaw/plugin-sdk/media-runtime";\n',
     [
-      "const saveRemoteMedia = async (params) => ({",
+      "const saveRemoteMedia = async (params) => {",
+      "  globalThis.__telnyxWabaMediaDownloads = globalThis.__telnyxWabaMediaDownloads || [];",
+      "  globalThis.__telnyxWabaMediaDownloads.push(params);",
+      "  return {",
       '  path: "/home/node/.openclaw/media/inbound/" + params.filePathHint + "---test-id",',
       '  contentType: params.fallbackContentType || "application/octet-stream",',
       "  size: 1234,",
-      "});",
+      "  };",
+      "};",
       "",
     ].join("\n"),
   );
@@ -51,10 +55,32 @@ async function loadPluginInternals() {
       diagnosticPayloadShape,
       validateMediaUrl,
       publicWebhookUrl,
+      plugin: globalThis.__plugin,
     };
   `;
   await import(`data:text/javascript,${encodeURIComponent(code)}`);
   return globalThis.__telnyxWabaTest;
+}
+
+function makeJsonRequest(body, headers = {}) {
+  const payload = typeof body === "string" ? body : JSON.stringify(body);
+  const req = Readable.from([Buffer.from(payload)]);
+  req.method = "POST";
+  req.headers = { "content-type": "application/json", ...headers };
+
+  const responseHeaders = {};
+  const res = {
+    statusCode: 0,
+    setHeader(name, value) {
+      responseHeaders[name.toLowerCase()] = value;
+    },
+    end(payloadText) {
+      this.body = payloadText;
+    },
+    headers: responseHeaders,
+  };
+
+  return { req, res };
 }
 
 test("extracts text and shared WhatsApp locations", async () => {
@@ -102,6 +128,7 @@ test("extracts text and shared WhatsApp locations", async () => {
 
 test("downloads safe Telnyx media and exposes local media references", async () => {
   const { extractWhatsappMessage } = await loadPluginInternals();
+  globalThis.__telnyxWabaMediaDownloads = [];
 
   const message = await extractWhatsappMessage({
     from: "+15551234567",
@@ -154,6 +181,32 @@ test("downloads safe Telnyx media and exposes local media references", async () 
   });
   assert.match(storageMessage.text, /Local media path: \/home\/node\/\.openclaw\/media\/inbound\/example\.jpeg---test-id/);
   assert.match(storageMessage.text, /Media URI: media:\/\/inbound\/example\.jpeg---test-id/);
+
+  assert.deepEqual(
+    globalThis.__telnyxWabaMediaDownloads.map((download) => ({
+      url: download.url,
+      contentType: download.fallbackContentType,
+      filePathHint: download.filePathHint,
+    })),
+    [
+      {
+        url: "https://media.telnyx.com/messages/example-image.png",
+        contentType: "image/png",
+        filePathHint: "example-image.png",
+      },
+      {
+        url: "https://media.telnyx.com/messages/nested-image.jpg",
+        contentType: "image/jpeg",
+        filePathHint: "image-a521caac-4127-4801-997d-f954af4d7154",
+      },
+      {
+        url: "https://rcs-outbound-east.us-east-1.telnyxcloudstorage.com/2026-05-25/example.jpeg",
+        contentType: "image/jpeg",
+        filePathHint: "example.jpeg",
+      },
+    ],
+  );
+  delete globalThis.__telnyxWabaMediaDownloads;
 });
 
 test("rejects unsafe media URLs before download", async () => {
@@ -351,7 +404,7 @@ test("WABA webhook delegates SMS payloads away from WABA processing", async () =
   const previousDelegateUrl = process.env.TELNYX_SMS_DELEGATE_URL;
   process.env.TELNYX_SMS_DELEGATE_URL = "false";
   const { handleWhatsappWebhook } = await loadPluginInternals();
-  const body = JSON.stringify({
+  const { req, res } = makeJsonRequest({
     data: {
       event_type: "message.received",
       payload: {
@@ -361,20 +414,6 @@ test("WABA webhook delegates SMS payloads away from WABA processing", async () =
       },
     },
   });
-  const req = Readable.from([Buffer.from(body)]);
-  req.method = "POST";
-  req.headers = { "content-type": "application/json" };
-
-  const headers = {};
-  const res = {
-    statusCode: 0,
-    setHeader(name, value) {
-      headers[name.toLowerCase()] = value;
-    },
-    end(payload) {
-      this.body = payload;
-    },
-  };
 
   try {
     assert.equal(await handleWhatsappWebhook(req, res), true);
@@ -390,6 +429,87 @@ test("WABA webhook delegates SMS payloads away from WABA processing", async () =
       process.env.TELNYX_SMS_DELEGATE_URL = previousDelegateUrl;
     }
   }
+});
+
+test("WABA webhook rejects malformed or unsigned requests without dispatching", async () => {
+  const previousPublicKey = process.env.TELNYX_PUBLIC_KEY;
+  const { handleWhatsappWebhook } = await loadPluginInternals();
+
+  try {
+    const malformed = makeJsonRequest("{not-json");
+    assert.equal(await handleWhatsappWebhook(malformed.req, malformed.res), true);
+    assert.equal(malformed.res.statusCode, 400);
+    assert.deepEqual(JSON.parse(malformed.res.body), { ok: false, error: "invalid_json" });
+
+    process.env.TELNYX_PUBLIC_KEY = Buffer.alloc(32, 7).toString("base64");
+    const unsigned = makeJsonRequest({
+      data: {
+        event_type: "message.received",
+        payload: {
+          type: "whatsapp",
+          from: { phone_number: "+15551234567" },
+          text: "unsigned should not dispatch",
+        },
+      },
+    });
+    assert.equal(await handleWhatsappWebhook(unsigned.req, unsigned.res), true);
+    assert.equal(unsigned.res.statusCode, 401);
+    assert.equal(unsigned.res.body, "Missing Telnyx signature");
+  } finally {
+    if (previousPublicKey === undefined) {
+      delete process.env.TELNYX_PUBLIC_KEY;
+    } else {
+      process.env.TELNYX_PUBLIC_KEY = previousPublicKey;
+    }
+  }
+});
+
+test("unreadable WABA payload diagnostics stay shape-only", async () => {
+  const { dispatchWhatsappPayload, setTelnyxWabaRuntime } = await loadPluginInternals();
+  const warnings = [];
+  const previousWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(" "));
+
+  try {
+    setTelnyxWabaRuntime({ channel: {} });
+    await dispatchWhatsappPayload({}, "+15551234567", {
+      from: { phone_number: "+15551234567" },
+      type: "whatsapp",
+      whatsapp: { messages: [{ type: "unsupported", secret: "private payload text" }] },
+    });
+  } finally {
+    console.warn = previousWarn;
+  }
+
+  assert.equal(globalThis.__telnyxWabaDispatches?.length || 0, 0);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /payload shape=/);
+  assert.match(warnings[0], /"secret":"string"/);
+  assert.doesNotMatch(warnings[0], /private payload text/);
+});
+
+test("plugin metadata advertises the expected OpenClaw channel contract", async () => {
+  const { plugin } = await loadPluginInternals();
+
+  assert.equal(plugin.id, "telnyx-waba");
+  assert.deepEqual(plugin.plugin.base.capabilities.chatTypes, ["direct"]);
+  assert.equal(plugin.plugin.base.capabilities.media, true);
+  assert.equal(plugin.plugin.base.capabilities.reactions, true);
+  assert.equal(plugin.plugin.base.capabilities.reply, false);
+  assert.equal(plugin.plugin.outbound.base.deliveryMode, "direct");
+  assert.deepEqual(plugin.plugin.messaging.resolveSessionConversation({ rawId: "+15551234567" }), {
+    conversationId: "+15551234567",
+  });
+});
+
+test("WABA plugin stays on OpenClaw channel runtime instead of model-local relay", async () => {
+  const source = await fs.readFile(new URL("../dist/index.js", import.meta.url), "utf8");
+
+  assert.match(source, /dispatchInboundDirectDmWithRuntime/);
+  assert.doesNotMatch(source, /\/v1\/chat\/completions/);
+  assert.doesNotMatch(source, /OPENCLAW_GATEWAY_TOKEN/);
+  assert.doesNotMatch(source, /OPENCLAW_AGENT/);
+  assert.doesNotMatch(source, /OPENCLAW_MODEL/);
 });
 
 test("diagnostic payload shape does not include scalar message contents", async () => {

@@ -1,0 +1,38 @@
+{
+  "name": "Telnyx storage-backed WABA media",
+  "source": "Observed Telnyx WABA media URL host",
+  "payload": {
+    "from": {
+      "phone_number": "+15551234567"
+    },
+    "type": "whatsapp",
+    "whatsapp": {
+      "messages": [
+        {
+          "type": "image",
+          "image": {
+            "id": "4453388224893285",
+            "link": "https://rcs-outbound-east.us-east-1.telnyxcloudstorage.com/2026-05-25/d152a8c088c3a097b6c488c51889a592e41c274f034027d4db441c4aefc15cfc.jpeg",
+            "mime_type": "image/jpeg",
+            "sha256": "0VKowIjDoJe2xIjFGImlkuQcJ08DQCfU20QcSu/BXPw=",
+            "caption": "What does this make you think about?"
+          }
+        }
+      ]
+    }
+  },
+  "expectedTextIncludes": [
+    "Image attachment",
+    "Caption: What does this make you think about?",
+    "MIME type: image/jpeg",
+    "Local media path:",
+    "Media URI: media://inbound/",
+    "URL: https://rcs-outbound-east.us-east-1.telnyxcloudstorage.com/2026-05-25/d152a8c088c3a097b6c488c51889a592e41c274f034027d4db441c4aefc15cfc.jpeg",
+    "Media ID: 4453388224893285",
+    "SHA-256: 0VKowIjDoJe2xIjFGImlkuQcJ08DQCfU20QcSu/BXPw="
+  ],
+  "expectedTextExcludes": [
+    "Download error:",
+    "/tmp/whatsapp_image.jpg"
+  ]
+}

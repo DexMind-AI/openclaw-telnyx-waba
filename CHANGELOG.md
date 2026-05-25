@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added regression coverage for real Telnyx storage media URLs, media-runtime download parameters, webhook failure modes, shape-only diagnostics, OpenClaw channel metadata, and prevention of channel-local model relay dependencies.
+
 ## 0.2.1
 
 - Allowed Telnyx WABA media URLs from `telnyxcloudstorage.com` so real photo/audio attachments download into OpenClaw's inbound media store instead of forcing agent-side `/tmp` workarounds.
