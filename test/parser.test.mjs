@@ -162,6 +162,92 @@ test("preserves contacts, reactions, and outbound webhook URL behavior", async (
   assert.equal(publicWebhookUrl("/telnyx/whatsapp"), undefined);
 });
 
+test("reactions include the referenced message text when the message was seen", async () => {
+  const { extractWhatsappMessage } = await loadPluginInternals();
+
+  await extractWhatsappMessage({
+    id: "wamid.reference-message",
+    from: "+15551234567",
+    type: "text",
+    text: "Now I just hope he doesn't have to eject a warp core anytime soon. 🖖",
+  });
+
+  const reaction = await extractWhatsappMessage({
+    from: "+15551234567",
+    type: "reaction",
+    reaction: {
+      emoji: "😂",
+      message_id: "wamid.reference-message",
+    },
+  });
+
+  assert.match(reaction.text, /Reaction\. Emoji: 😂\. Message ID: wamid\.reference-message\./);
+  assert.match(reaction.text, /Reacted message: Now I just hope he doesn't have to eject a warp core anytime soon\./);
+});
+
+test("replies include the referenced message text when the message was seen", async () => {
+  const { extractWhatsappMessage } = await loadPluginInternals();
+
+  await extractWhatsappMessage({
+    id: "wamid.reply-parent",
+    from: "+15551234567",
+    type: "text",
+    text: "The parent message Claudia should see.",
+  });
+
+  const reply = await extractWhatsappMessage({
+    id: "wamid.reply-child",
+    from: "+15551234567",
+    type: "text",
+    context: { id: "wamid.reply-parent" },
+    text: "This is the reply body.",
+  });
+
+  assert.match(reply.text, /Replied-to message: The parent message Claudia should see\./);
+  assert.match(reply.text, /This is the reply body\./);
+});
+
+test("reactions and replies resolve messages earlier in the same webhook payload", async () => {
+  const { extractWhatsappMessage } = await loadPluginInternals();
+
+  const message = await extractWhatsappMessage({
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  id: "wamid.same-payload-parent",
+                  type: "text",
+                  text: { body: "Same payload parent text." },
+                },
+                {
+                  type: "reaction",
+                  reaction: {
+                    emoji: "😂",
+                    message_id: "wamid.same-payload-parent",
+                  },
+                },
+                {
+                  id: "wamid.same-payload-reply",
+                  type: "text",
+                  context: { id: "wamid.same-payload-parent" },
+                  text: { body: "Same payload reply body." },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.match(message.text, /Reacted message: Same payload parent text\./);
+  assert.match(message.text, /Replied-to message: Same payload parent text\./);
+  assert.match(message.text, /Same payload reply body\./);
+});
+
 test("WABA webhook delegates SMS payloads away from WABA processing", async () => {
   const previousDelegateUrl = process.env.TELNYX_SMS_DELEGATE_URL;
   process.env.TELNYX_SMS_DELEGATE_URL = "false";

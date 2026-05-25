@@ -1,6 +1,6 @@
 {
   "name": "@dexmind/openclaw-telnyx-waba",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Telnyx WhatsApp Business API and Voice AI Assistant plugin for OpenClaw gateways",
   "type": "module",
   "license": "MIT",

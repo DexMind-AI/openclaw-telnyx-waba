@@ -13,6 +13,9 @@ const DEFAULT_MEDIA_DOWNLOAD_TIMEOUT_MS = 10_000;
 const ALLOWED_TELNYX_MEDIA_HOST_SUFFIXES = [".telnyx.com", ".telnyxcdn.com", ".telnyx.net"];
 const DIAGNOSTIC_SHAPE_MAX_DEPTH = 6;
 const DIAGNOSTIC_SHAPE_MAX_KEYS = 40;
+const MESSAGE_CONTEXT_LIMIT = 500;
+const MESSAGE_CONTEXT_TEXT_LIMIT = 500;
+const messageContextById = new Map();
 
 function env(name, fallback = "") {
   const value = process.env[name];
@@ -233,6 +236,138 @@ function scalarText(value) {
   return null;
 }
 
+function hasMessageContent(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (value.reaction && Object.keys(value).length <= 3) return false;
+  return Boolean(
+    value.text ||
+      value.body ||
+      value.whatsapp_message ||
+      value.media ||
+      value.image ||
+      value.video ||
+      value.audio ||
+      value.document ||
+      value.sticker ||
+      value.location ||
+      value.contacts ||
+      value.contact ||
+      value.interactive ||
+      value.button_reply ||
+      value.list_reply,
+  );
+}
+
+function rememberedMessageText(messageId) {
+  return messageId ? messageContextById.get(messageId) || null : null;
+}
+
+function rememberMessageId(messageId, text) {
+  const id = scalarText(messageId);
+  const trimmed = scalarText(text);
+  if (!id || !trimmed) return;
+
+  const summary = trimmed.length > MESSAGE_CONTEXT_TEXT_LIMIT ? `${trimmed.slice(0, MESSAGE_CONTEXT_TEXT_LIMIT)}...` : trimmed;
+  messageContextById.delete(id);
+  messageContextById.set(id, summary);
+  while (messageContextById.size > MESSAGE_CONTEXT_LIMIT) {
+    const oldest = messageContextById.keys().next().value;
+    messageContextById.delete(oldest);
+  }
+}
+
+function collectReplyReferences(value, seen = new WeakSet()) {
+  if (!value || typeof value !== "object") return [];
+  if (seen.has(value)) return [];
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectReplyReferences(item, seen));
+  }
+
+  const ids = [];
+  const contextId = scalarText(value.context?.id || value.context?.message_id || value.context?.messageId);
+  if (contextId) ids.push(contextId);
+
+  const replyToId = scalarText(
+    value.reply_to_message?.id ||
+      value.reply_to_message?.message_id ||
+      value.reply_to?.id ||
+      value.replyTo?.id ||
+      value.quoted_message?.id ||
+      value.quotedMessage?.id ||
+      value.referenced_message?.id ||
+      value.referencedMessage?.id,
+  );
+  if (replyToId) ids.push(replyToId);
+
+  for (const nested of Object.values(value)) ids.push(...collectReplyReferences(nested, seen));
+  return [...new Set(ids)];
+}
+
+function replyContextText(payload) {
+  const lines = [];
+  for (const messageId of collectReplyReferences(payload)) {
+    const referencedText = rememberedMessageText(messageId);
+    lines.push(
+      referencedText
+        ? `The user replied to a previous WhatsApp message. Replied-to message: ${referencedText}`
+        : `The user replied to a previous WhatsApp message. Replied-to message ID: ${messageId}`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function messageTextSnippet(value) {
+  const directText = textValue(value.text || value.body);
+  const interactiveText = collectInteractiveTexts(value).filter(Boolean).join("\n");
+  const whatsappText = textValue(value.whatsapp_message?.text || value.whatsapp_message?.body);
+  return directText || whatsappText || interactiveText || null;
+}
+
+function messageContextSummary(value) {
+  const text = messageTextSnippet(value);
+  const location = locationText(value);
+  const attachments = collectAttachments(value).filter((attachment) => attachment.type !== "reaction");
+  const attachmentsText = attachments.length ? attachments.map((attachment) => attachmentLine(attachment)).join("\n") : null;
+  return [text, location, attachmentsText].filter(Boolean).join("\n\n");
+}
+
+function collectObservedMessageTexts(value, seen = new WeakSet()) {
+  if (!value || typeof value !== "object") return [];
+  if (seen.has(value)) return [];
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectObservedMessageTexts(item, seen));
+  }
+
+  const own = hasMessageContent(value) ? messageTextSnippet(value) : null;
+  const nested = Object.values(value).flatMap((item) => collectObservedMessageTexts(item, seen));
+  return [...new Set([own, ...nested].filter(Boolean))];
+}
+
+function rememberObservedMessageContexts(value, seen = new WeakSet()) {
+  if (!value || typeof value !== "object") return;
+  if (seen.has(value)) return;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) rememberObservedMessageContexts(item, seen);
+    return;
+  }
+
+  if (hasMessageContent(value)) {
+    rememberMessageId(value.id, messageContextSummary(value));
+  }
+
+  for (const nested of Object.values(value)) rememberObservedMessageContexts(nested, seen);
+}
+
+function rememberMessageContext(payload, text) {
+  if (hasMessageContent(payload)) rememberMessageId(payload.id, text);
+}
+
 function finiteNumber(value) {
   const number = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
   return Number.isFinite(number) ? number : null;
@@ -432,7 +567,7 @@ function reactionDetails(value) {
   const emoji = scalarText(value.emoji);
   const messageId = scalarText(value.message_id || value.messageId || value.id);
   if (!emoji && !messageId) return null;
-  return { type: "reaction", emoji, messageId };
+  return { type: "reaction", emoji, messageId, referencedText: rememberedMessageText(messageId) };
 }
 
 function collectAttachments(payload) {
@@ -502,6 +637,7 @@ function attachmentLine(attachment) {
     const details = [];
     if (attachment.emoji) details.push(`Emoji: ${attachment.emoji}`);
     if (attachment.messageId) details.push(`Message ID: ${attachment.messageId}`);
+    if (attachment.referencedText) details.push(`Reacted message: ${attachment.referencedText}`);
     return details.length ? `${type}. ${details.join(". ")}.` : `${type}.`;
   }
 
@@ -583,6 +719,7 @@ async function extractWhatsappMessage(payload) {
   const fromNumber = phoneNumber(payload.from || payload.from_number || payload.sender);
   const toNumber = phoneNumber(payload.to || payload.to_number || payload.recipient);
   const media = hasMedia(payload);
+  rememberObservedMessageContexts(payload);
   const location = locationText(payload);
   const attachments = await resolveAttachments(payload);
   const attachmentsSummary = attachments.length > 0
@@ -591,14 +728,17 @@ async function extractWhatsappMessage(payload) {
         ...attachments.map((attachment, index) => `${index + 1}. ${attachmentLine(attachment)}`),
       ].join("\n")
     : null;
+  const replyContext = replyContextText(payload);
   const directText = textValue(payload.text || payload.body);
   const partsText = Array.isArray(payload.parts) && payload.parts.length > 0 ? textValue(payload.parts) : null;
   const interactiveText = collectInteractiveTexts(payload).filter(Boolean).join("\n");
   const whatsappText = !location && !attachmentsSummary ? textValue(payload.whatsapp_message) : null;
-  let text = [directText || partsText || whatsappText || interactiveText, location, attachmentsSummary].filter(Boolean).join("\n\n");
+  const observedText = collectObservedMessageTexts(payload).join("\n");
+  let text = [replyContext, directText || partsText || whatsappText || interactiveText || observedText, location, attachmentsSummary].filter(Boolean).join("\n\n");
   if (!text && media) {
     text = "The user sent a WhatsApp media attachment, but Telnyx did not include readable attachment metadata.";
   }
+  rememberMessageContext(payload, text);
 
   return {
     fromNumber,

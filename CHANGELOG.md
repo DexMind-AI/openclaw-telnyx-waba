@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.9
+
+- Added bounded observed-message context for WABA reactions and replies.
+- Reactions now include the referenced message text when the target message passed through the gateway.
+- Replies now include the referenced message text when the parent message passed through the gateway.
+- Batched Meta-style webhook payloads now resolve reactions and replies against messages earlier in the same payload.
+
 ## 0.1.8
 
 - Added a published-shape WABA compatibility corpus covering Telnyx and Meta-style text, media, location, contact, reaction, and interactive payload families.

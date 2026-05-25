@@ -9,6 +9,13 @@
             "value": {
               "messages": [
                 {
+                  "id": "wamid.previous",
+                  "type": "text",
+                  "text": {
+                    "body": "previous corpus message"
+                  }
+                },
+                {
                   "type": "contacts",
                   "contacts": [
                     {
@@ -32,7 +39,7 @@
                   "type": "reaction",
                   "reaction": {
                     "emoji": "👍",
-                    "message_id": "wamid.123"
+                    "message_id": "wamid.previous"
                   }
                 },
                 {
@@ -57,7 +64,8 @@
     "ada@example.com",
     "Reaction",
     "Emoji: 👍",
-    "wamid.123",
+    "wamid.previous",
+    "Reacted message: previous corpus message",
     "Yes"
   ]
 }
