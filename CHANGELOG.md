@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- Removed plain SMS reply handling so deployments can use Telnyx's official `telnyx-openclaw-sms-channel` in parallel.
+- WABA route now delegates `SMS` payloads to `TELNYX_SMS_DELEGATE_URL`, defaulting to the official channel route at `http://127.0.0.1:18789/telnyx-sms/webhook`.
+- Removed `TELNYX_SMS_ALLOWED_NUMBERS` from the plugin env contract.
+
 ## 0.1.4
 
 - Extracted the Claudia-local Telnyx WABA plugin into a reusable OpenClaw plugin package.

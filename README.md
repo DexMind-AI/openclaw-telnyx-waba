@@ -1,12 +1,12 @@
 # Telnyx WABA Plugin for OpenClaw
 
-OpenClaw gateway plugin for Telnyx WhatsApp Business API, SMS, and Telnyx Voice AI Assistant webhooks.
+OpenClaw gateway plugin for Telnyx WhatsApp Business API and Telnyx Voice AI Assistant webhooks.
 
 This package exists for deployments that use Telnyx WABA instead of OpenClaw's official WhatsApp Web/Baileys channel. It registers gateway-local HTTP routes and relays validated inbound messages into an OpenClaw agent through the gateway's OpenAI-compatible API.
 
 ## Routes
 
-- `/telnyx/whatsapp`: receives Telnyx WhatsApp Business API webhooks, plus plain SMS `message.received` webhooks when they share the same Telnyx Messaging webhook.
+- `/telnyx/whatsapp`: receives Telnyx WhatsApp Business API webhooks. Plain SMS payloads are delegated to Telnyx's official `telnyx-sms` OpenClaw channel on `/telnyx-sms/webhook` when available.
 - `/telnyx/voice`: receives Telnyx Call Control webhooks, answers allowed inbound calls, and starts the configured Telnyx AI Assistant.
 
 ## Message Handling
@@ -25,7 +25,7 @@ Media downloads use a defense-in-depth URL policy adapted from Telnyx's official
 
 ## Environment
 
-Required for WABA/SMS:
+Required for WABA:
 
 ```sh
 TELNYX_API_KEY=KEY...
@@ -43,7 +43,7 @@ OPENCLAW_AGENT=main
 OPENCLAW_MODEL=openclaw/main
 OPENCLAW_ASSISTANT_NAME="the configured OpenClaw agent"
 TELNYX_WHATSAPP_ALLOWED_NUMBERS=+15551234567,+15557654321
-TELNYX_SMS_ALLOWED_NUMBERS=+15551234567
+TELNYX_SMS_DELEGATE_URL=http://127.0.0.1:18789/telnyx-sms/webhook
 TELNYX_WABA_DOWNLOAD_ATTACHMENTS=true
 TELNYX_WABA_MEDIA_MAX_BYTES=26214400
 TELNYX_WABA_MEDIA_DOWNLOAD_TIMEOUT_MS=10000
@@ -71,5 +71,5 @@ Install into an OpenClaw gateway with the normal plugin install flow for the tar
 ## Notes
 
 - WABA is separate from OpenClaw's official `@openclaw/whatsapp` plugin, which uses WhatsApp Web/Baileys.
-- SMS support is intentionally conservative: SMS replies require `TELNYX_SMS_ALLOWED_NUMBERS`; when unset, the plugin falls back to `TELNYX_WHATSAPP_ALLOWED_NUMBERS`.
+- Plain SMS/MMS should use Telnyx's official `telnyx-openclaw-sms-channel` plugin in parallel. This plugin can delegate SMS payloads there when Telnyx still points a shared messaging webhook at `/telnyx/whatsapp`.
 - The plugin makes inbound media available to the agent; it does not itself run OCR, transcription, or image analysis.

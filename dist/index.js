@@ -6,6 +6,7 @@ import { saveRemoteMedia } from "openclaw/plugin-sdk/media-runtime";
 const WHATSAPP_ROUTE_PATH = "/telnyx/whatsapp";
 const VOICE_ROUTE_PATH = "/telnyx/voice";
 const DEFAULT_GATEWAY_URL = "http://127.0.0.1:18789";
+const DEFAULT_SMS_DELEGATE_URL = "http://127.0.0.1:18789/telnyx-sms/webhook";
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 const DEFAULT_MEDIA_MAX_BYTES = 25 * 1024 * 1024;
 const DEFAULT_MEDIA_DOWNLOAD_TIMEOUT_MS = 10_000;
@@ -34,16 +35,6 @@ function allowedNumbers() {
   );
 }
 
-function smsAllowedNumbers() {
-  const configured = env("TELNYX_SMS_ALLOWED_NUMBERS", env("TELNYX_WHATSAPP_ALLOWED_NUMBERS"));
-  return new Set(
-    configured
-      .split(",")
-      .map((value) => normalizePhoneNumber(value.trim()))
-      .filter(Boolean),
-  );
-}
-
 function voiceAllowedNumbers() {
   return new Set(
     env("TELNYX_VOICE_ALLOWED_NUMBERS")
@@ -56,11 +47,6 @@ function voiceAllowedNumbers() {
 function senderAllowed(fromNumber) {
   const allowed = allowedNumbers();
   return allowed.size === 0 || allowed.has(normalizePhoneNumber(fromNumber));
-}
-
-function smsSenderAllowed(fromNumber) {
-  const allowed = smsAllowedNumbers();
-  return Boolean(fromNumber && allowed.has(normalizePhoneNumber(fromNumber)));
 }
 
 function callerAllowed(fromNumber) {
@@ -548,18 +534,6 @@ async function extractWhatsappMessage(payload) {
   };
 }
 
-function extractSmsMessage(payload) {
-  const fromNumber = phoneNumber(payload.from || payload.from_number || payload.sender);
-  const toNumber = phoneNumber(payload.to || payload.to_number || payload.recipient);
-  const text = textValue(payload.text || payload.body || payload.message);
-
-  return {
-    fromNumber,
-    toNumber,
-    text,
-  };
-}
-
 function publicWebhookUrl(path) {
   const publicBaseUrl = env("PUBLIC_BASE_URL");
   return publicBaseUrl ? `${publicBaseUrl.replace(/\/$/, "")}${path}` : undefined;
@@ -571,7 +545,7 @@ async function askAgent(text, sessionId, channel) {
 
   const agent = env("OPENCLAW_AGENT", "main");
   const gatewayUrl = env("OPENCLAW_GATEWAY_URL", DEFAULT_GATEWAY_URL);
-  const channelName = channel === "sms" ? "SMS" : "WhatsApp";
+  const channelName = "WhatsApp";
   const assistantName = env("OPENCLAW_ASSISTANT_NAME", "the configured OpenClaw agent");
   const response = await fetch(`${gatewayUrl.replace(/\/$/, "")}/v1/chat/completions`, {
     method: "POST",
@@ -590,7 +564,7 @@ async function askAgent(text, sessionId, channel) {
         },
         { role: "user", content: text },
       ],
-      metadata: { session_id: sessionId, source: channel === "sms" ? "telnyx-sms" : "telnyx-waba" },
+      metadata: { session_id: sessionId, source: "telnyx-waba" },
     }),
   });
 
@@ -632,35 +606,6 @@ async function sendWhatsapp(to, text) {
 
   if (!response.ok) {
     throw new Error(`Telnyx WhatsApp send failed: HTTP ${response.status} ${await response.text()}`);
-  }
-  return response.json();
-}
-
-async function sendSms(to, text) {
-  const apiKey = env("TELNYX_API_KEY");
-  const from = env("TELNYX_PHONE_NUMBER");
-  if (!apiKey || !from) {
-    throw new Error("TELNYX_API_KEY and TELNYX_PHONE_NUMBER are required");
-  }
-
-  const webhookUrl = publicWebhookUrl(WHATSAPP_ROUTE_PATH);
-  const response = await fetch("https://api.telnyx.com/v2/messages", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to,
-      text,
-      ...(webhookUrl ? { webhook_url: webhookUrl } : {}),
-      use_profile_webhooks: false,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Telnyx SMS send failed: HTTP ${response.status} ${await response.text()}`);
   }
   return response.json();
 }
@@ -767,6 +712,51 @@ async function handleVoiceWebhook(req, res) {
   return true;
 }
 
+function forwardedSmsHeaders(headers) {
+  const forwarded = { "content-type": "application/json" };
+  for (const name of ["telnyx-signature-ed25519", "telnyx-timestamp"]) {
+    const value = headers[name];
+    if (Array.isArray(value)) {
+      if (value[0]) forwarded[name] = value[0];
+    } else if (value) {
+      forwarded[name] = value;
+    }
+  }
+  return forwarded;
+}
+
+async function delegateSmsWebhook(req, res, rawBody) {
+  const delegateUrl = env("TELNYX_SMS_DELEGATE_URL", DEFAULT_SMS_DELEGATE_URL);
+  if (delegateUrl.toLowerCase() === "false" || delegateUrl.toLowerCase() === "off") {
+    writeJson(res, 200, { ok: true, ignored: "sms_delegate_disabled" });
+    return true;
+  }
+
+  let response;
+  try {
+    response = await fetch(delegateUrl, {
+      method: "POST",
+      headers: forwardedSmsHeaders(req.headers),
+      body: rawBody,
+    });
+  } catch (err) {
+    console.warn(`[telnyx-waba] SMS delegate ${delegateUrl} failed:`, err);
+    writeJson(res, 200, { ok: true, ignored: "sms_delegate_unavailable" });
+    return true;
+  }
+
+  const body = await response.text();
+  if (response.status === 404 || response.status === 405) {
+    writeJson(res, 200, { ok: true, ignored: "sms_delegate_unavailable" });
+    return true;
+  }
+
+  res.statusCode = response.status;
+  res.setHeader("content-type", response.headers.get("content-type") || "text/plain; charset=utf-8");
+  res.end(body);
+  return true;
+}
+
 async function replyToWhatsapp(fromNumber, text) {
   const reply = await askAgent(text, `telnyx-whatsapp:${normalizePhoneNumber(fromNumber)}`, "whatsapp");
   await sendWhatsapp(fromNumber, reply);
@@ -779,11 +769,6 @@ async function replyToWhatsappPayload(fromNumber, payload) {
     return;
   }
   await replyToWhatsapp(fromNumber, text);
-}
-
-async function replyToSms(fromNumber, text) {
-  const reply = await askAgent(text, `telnyx-sms:${normalizePhoneNumber(fromNumber)}`, "sms");
-  await sendSms(fromNumber, reply);
 }
 
 async function handleWhatsappWebhook(req, res) {
@@ -816,31 +801,13 @@ async function handleWhatsappWebhook(req, res) {
   }
 
   const messageType = String(payload.type || payload.message_type || "").toUpperCase();
-  const whatsappContentTypes = new Set(["TEXT", "IMAGE", "VIDEO", "AUDIO", "DOCUMENT", "STICKER", "LOCATION", "INTERACTIVE", "BUTTON", "CONTACTS", "CONTACT", "REACTION"]);
-  if (messageType && messageType !== "WHATSAPP" && messageType !== "SMS" && !whatsappContentTypes.has(messageType)) {
-    writeJson(res, 200, { ok: true, ignored: messageType });
-    return true;
+  if (messageType === "SMS") {
+    return delegateSmsWebhook(req, res, rawBody);
   }
 
-  if (messageType === "SMS") {
-    const { fromNumber, text } = extractSmsMessage(payload);
-    if (!fromNumber || !text) {
-      writeJson(res, 200, { ok: true, ignored: "no_text" });
-      return true;
-    }
-
-    if (!smsSenderAllowed(fromNumber)) {
-      console.warn(`[telnyx-sms] Ignoring non-allowlisted SMS sender ${fromNumber}`);
-      writeJson(res, 200, { ok: true, ignored: "sender_not_allowed" });
-      return true;
-    }
-
-    setImmediate(() => {
-      replyToSms(fromNumber, text).catch((err) => {
-        console.error(`[telnyx-sms] Failed to process SMS from ${fromNumber}:`, err);
-      });
-    });
-    writeJson(res, 200, { ok: true });
+  const whatsappContentTypes = new Set(["TEXT", "IMAGE", "VIDEO", "AUDIO", "DOCUMENT", "STICKER", "LOCATION", "INTERACTIVE", "BUTTON", "CONTACTS", "CONTACT", "REACTION"]);
+  if (messageType && messageType !== "WHATSAPP" && !whatsappContentTypes.has(messageType)) {
+    writeJson(res, 200, { ok: true, ignored: messageType });
     return true;
   }
 
@@ -868,7 +835,7 @@ async function handleWhatsappWebhook(req, res) {
 export default definePluginEntry({
   id: "telnyx-waba",
   name: "Telnyx WABA",
-  description: "Telnyx Voice AI Assistant, SMS, and WhatsApp Business API integration for OpenClaw",
+  description: "Telnyx Voice AI Assistant and WhatsApp Business API integration for OpenClaw",
   register(api) {
     api.registerHttpRoute({
       path: WHATSAPP_ROUTE_PATH,

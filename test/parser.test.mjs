@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import { Readable } from "node:stream";
 import test from "node:test";
 
 async function loadPluginInternals() {
@@ -23,6 +24,7 @@ async function loadPluginInternals() {
   code += `
     globalThis.__telnyxWabaTest = {
       extractWhatsappMessage,
+      handleWhatsappWebhook,
       validateMediaUrl,
       publicWebhookUrl,
     };
@@ -117,4 +119,49 @@ test("preserves contacts, reactions, and outbound webhook URL behavior", async (
   assert.match(message.text, /Contact card\. Name: Ada Lovelace\. Phones: \+15557654321\./);
   assert.match(message.text, /Reaction\. Emoji: 👍\. Message ID: wamid\.123\./);
   assert.equal(publicWebhookUrl("/telnyx/whatsapp"), undefined);
+});
+
+test("WABA webhook delegates SMS payloads away from WABA processing", async () => {
+  const previousDelegateUrl = process.env.TELNYX_SMS_DELEGATE_URL;
+  process.env.TELNYX_SMS_DELEGATE_URL = "false";
+  const { handleWhatsappWebhook } = await loadPluginInternals();
+  const body = JSON.stringify({
+    data: {
+      event_type: "message.received",
+      payload: {
+        type: "SMS",
+        from: { phone_number: "+15551234567" },
+        text: "hello by sms",
+      },
+    },
+  });
+  const req = Readable.from([Buffer.from(body)]);
+  req.method = "POST";
+  req.headers = { "content-type": "application/json" };
+
+  const headers = {};
+  const res = {
+    statusCode: 0,
+    setHeader(name, value) {
+      headers[name.toLowerCase()] = value;
+    },
+    end(payload) {
+      this.body = payload;
+    },
+  };
+
+  try {
+    assert.equal(await handleWhatsappWebhook(req, res), true);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(JSON.parse(res.body), {
+      ok: true,
+      ignored: "sms_delegate_disabled",
+    });
+  } finally {
+    if (previousDelegateUrl === undefined) {
+      delete process.env.TELNYX_SMS_DELEGATE_URL;
+    } else {
+      process.env.TELNYX_SMS_DELEGATE_URL = previousDelegateUrl;
+    }
+  }
 });
