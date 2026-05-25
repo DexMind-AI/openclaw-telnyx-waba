@@ -172,12 +172,14 @@ function finiteNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function extractLocationValue(value) {
+function extractLocationValue(value, seen = new WeakSet()) {
   if (!value || typeof value !== "object") return null;
+  if (seen.has(value)) return null;
+  seen.add(value);
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const location = extractLocationValue(item);
+      const location = extractLocationValue(item, seen);
       if (location) return location;
     }
     return null;
@@ -190,12 +192,12 @@ function extractLocationValue(value) {
       latitude,
       longitude,
       name: textValue(value.name || value.title),
-      address: textValue(value.address || value.label || value.description),
+      address: textValue(value.address || value.label || value.description || value.url),
     };
   }
 
-  for (const key of ["location", "geo", "coordinates", "whatsapp_location", "whatsapp_message", "message", "parts"]) {
-    const location = extractLocationValue(value[key]);
+  for (const nested of Object.values(value)) {
+    const location = extractLocationValue(nested, seen);
     if (location) return location;
   }
 

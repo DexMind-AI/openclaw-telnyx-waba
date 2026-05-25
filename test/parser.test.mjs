@@ -55,6 +55,25 @@ test("extracts text and shared WhatsApp locations", async () => {
   });
   assert.match(location.text, /latitude 48\.85837, longitude 2\.294481/);
   assert.match(location.text, /Eiffel Tower/);
+
+  const nestedLocation = await extractWhatsappMessage({
+    from: { phone_number: "+15551234567" },
+    type: "whatsapp",
+    whatsapp: {
+      messages: [
+        {
+          type: "location",
+          location: {
+            latitude: "51.5074",
+            longitude: "-0.1278",
+            url: "https://maps.google.com/?q=51.5074,-0.1278",
+          },
+        },
+      ],
+    },
+  });
+  assert.match(nestedLocation.text, /latitude 51\.5074, longitude -0\.1278/);
+  assert.match(nestedLocation.text, /https:\/\/maps\.google\.com/);
 });
 
 test("downloads safe Telnyx media and exposes local media references", async () => {

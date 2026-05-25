@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6
+
+- Widened WABA location detection to find latitude/longitude pairs under any nested Telnyx/Meta wrapper instead of only a fixed list of wrapper keys.
+
 ## 0.1.5
 
 - Removed plain SMS reply handling so deployments can use Telnyx's official `telnyx-openclaw-sms-channel` in parallel.
