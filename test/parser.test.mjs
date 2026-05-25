@@ -402,7 +402,9 @@ test("WABA dispatches inbound messages through the OpenClaw direct-DM runtime", 
 
 test("WABA webhook delegates SMS payloads away from WABA processing", async () => {
   const previousDelegateUrl = process.env.TELNYX_SMS_DELEGATE_URL;
+  const previousPublicKey = process.env.TELNYX_PUBLIC_KEY;
   process.env.TELNYX_SMS_DELEGATE_URL = "false";
+  delete process.env.TELNYX_PUBLIC_KEY;
   const { handleWhatsappWebhook } = await loadPluginInternals();
   const { req, res } = makeJsonRequest({
     data: {
@@ -428,11 +430,17 @@ test("WABA webhook delegates SMS payloads away from WABA processing", async () =
     } else {
       process.env.TELNYX_SMS_DELEGATE_URL = previousDelegateUrl;
     }
+    if (previousPublicKey === undefined) {
+      delete process.env.TELNYX_PUBLIC_KEY;
+    } else {
+      process.env.TELNYX_PUBLIC_KEY = previousPublicKey;
+    }
   }
 });
 
 test("WABA webhook rejects malformed or unsigned requests without dispatching", async () => {
   const previousPublicKey = process.env.TELNYX_PUBLIC_KEY;
+  delete process.env.TELNYX_PUBLIC_KEY;
   const { handleWhatsappWebhook } = await loadPluginInternals();
 
   try {
