@@ -1,0 +1,57 @@
+{
+  "name": "@dexmind/openclaw-telnyx-waba",
+  "version": "0.1.4",
+  "description": "Telnyx WhatsApp Business API, SMS, and Voice AI Assistant plugin for OpenClaw gateways",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arnd-dexmind/openclaw-telnyx-waba.git"
+  },
+  "bugs": {
+    "url": "https://github.com/arnd-dexmind/openclaw-telnyx-waba/issues"
+  },
+  "homepage": "https://github.com/arnd-dexmind/openclaw-telnyx-waba#readme",
+  "scripts": {
+    "check": "node --check dist/index.js",
+    "test": "node --test test/*.test.mjs",
+    "verify": "npm run check && npm test",
+    "pack:dry-run": "npm pack --dry-run"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "telnyx",
+    "whatsapp",
+    "waba",
+    "sms",
+    "voice"
+  ],
+  "peerDependencies": {
+    "openclaw": ">=2026.5.12"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "runtimeExtensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.5.12"
+    }
+  },
+  "files": [
+    "dist/**",
+    "test/**",
+    "openclaw.plugin.json",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ]
+}

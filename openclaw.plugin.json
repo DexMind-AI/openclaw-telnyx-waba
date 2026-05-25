@@ -1,0 +1,29 @@
+{
+  "id": "telnyx-waba",
+  "activation": {
+    "onStartup": true
+  },
+  "channelEnvVars": {
+    "telnyx-waba": [
+      "PUBLIC_BASE_URL",
+      "TELNYX_API_KEY",
+      "TELNYX_PUBLIC_KEY",
+      "TELNYX_PHONE_NUMBER",
+      "TELNYX_CONNECTION_ID",
+      "TELNYX_AI_ASSISTANT_ID",
+      "TELNYX_VOICE_ALLOWED_NUMBERS",
+      "TELNYX_WHATSAPP_ALLOWED_NUMBERS",
+      "TELNYX_SMS_ALLOWED_NUMBERS",
+      "TELNYX_WABA_DOWNLOAD_ATTACHMENTS",
+      "TELNYX_WABA_MEDIA_MAX_BYTES",
+      "TELNYX_WABA_MEDIA_DOWNLOAD_TIMEOUT_MS",
+      "OPENCLAW_ASSISTANT_NAME",
+      "OPENCLAW_GATEWAY_TOKEN"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
