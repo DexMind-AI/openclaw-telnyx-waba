@@ -11,7 +11,7 @@ const DEFAULT_SMS_DELEGATE_URL = "http://127.0.0.1:18789/telnyx-sms/webhook";
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 const DEFAULT_MEDIA_MAX_BYTES = 25 * 1024 * 1024;
 const DEFAULT_MEDIA_DOWNLOAD_TIMEOUT_MS = 10_000;
-const ALLOWED_TELNYX_MEDIA_HOST_SUFFIXES = [".telnyx.com", ".telnyxcdn.com", ".telnyx.net"];
+const ALLOWED_TELNYX_MEDIA_HOST_SUFFIXES = [".telnyx.com", ".telnyxcdn.com", ".telnyx.net", ".telnyxcloudstorage.com"];
 const DIAGNOSTIC_SHAPE_MAX_DEPTH = 6;
 const DIAGNOSTIC_SHAPE_MAX_KEYS = 40;
 const MESSAGE_CONTEXT_LIMIT = 500;
@@ -1037,11 +1037,12 @@ async function dispatchWhatsappPayload(cfg, fromNumber, payload) {
     runtime: channelRuntime,
     channel: "telnyx-waba",
     channelLabel: "WhatsApp",
-    accountId: null,
+    accountId: "default",
     peer: { kind: "direct", id: sender },
     senderId: sender,
     senderAddress: fromNumber,
     recipientAddress: toNumber || env("TELNYX_PHONE_NUMBER"),
+    originatingTo: sender,
     conversationLabel: fromNumber,
     rawBody: text,
     bodyForAgent: text,

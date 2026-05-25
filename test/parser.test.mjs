@@ -141,6 +141,19 @@ test("downloads safe Telnyx media and exposes local media references", async () 
   assert.match(nestedMessage.text, /Caption: What do you see here/);
   assert.match(nestedMessage.text, /Local media path: \/home\/node\/\.openclaw\/media\/inbound\/image-a521caac-4127-4801-997d-f954af4d7154---test-id/);
   assert.match(nestedMessage.text, /Media URI: media:\/\/inbound\/image-a521caac-4127-4801-997d-f954af4d7154---test-id/);
+
+  const storageMessage = await extractWhatsappMessage({
+    from: "+15551234567",
+    type: "MMS",
+    media: [
+      {
+        url: "https://rcs-outbound-east.us-east-1.telnyxcloudstorage.com/2026-05-25/example.jpeg",
+        content_type: "image/jpeg",
+      },
+    ],
+  });
+  assert.match(storageMessage.text, /Local media path: \/home\/node\/\.openclaw\/media\/inbound\/example\.jpeg---test-id/);
+  assert.match(storageMessage.text, /Media URI: media:\/\/inbound\/example\.jpeg---test-id/);
 });
 
 test("rejects unsafe media URLs before download", async () => {
@@ -304,8 +317,12 @@ test("WABA dispatches inbound messages through the OpenClaw direct-DM runtime", 
     const dispatch = globalThis.__telnyxWabaDispatches[0];
     assert.equal(dispatch.channel, "telnyx-waba");
     assert.equal(dispatch.channelLabel, "WhatsApp");
+    assert.equal(dispatch.accountId, "default");
     assert.deepEqual(dispatch.peer, { kind: "direct", id: "+15551234567" });
     assert.equal(dispatch.senderId, "+15551234567");
+    assert.equal(dispatch.senderAddress, "+1 (555) 123-4567");
+    assert.equal(dispatch.recipientAddress, "+15557654321");
+    assert.equal(dispatch.originatingTo, "+15551234567");
     assert.equal(dispatch.rawBody, "hello with native channel context");
     assert.equal(dispatch.bodyForAgent, "hello with native channel context");
     assert.equal(dispatch.messageId, "wamid.inbound");

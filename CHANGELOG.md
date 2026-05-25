@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Allowed Telnyx WABA media URLs from `telnyxcloudstorage.com` so real photo/audio attachments download into OpenClaw's inbound media store instead of forcing agent-side `/tmp` workarounds.
+- Preserved the normalized sender as the direct-DM outbound target so generic `message` tool sends default back to the WhatsApp user, not the gateway's WABA number.
+- Normalized WABA dispatches to the default channel account.
+
 ## 0.2.0
 
 - Converted WABA inbound handling from a custom OpenAI-compatible chat-completions relay to OpenClaw's standard channel/direct-DM runtime.
