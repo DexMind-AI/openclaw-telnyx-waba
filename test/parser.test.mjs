@@ -96,6 +96,27 @@ test("downloads safe Telnyx media and exposes local media references", async () 
   assert.match(message.text, /Local media path: \/home\/node\/\.openclaw\/media\/inbound\/example-image\.png---test-id/);
   assert.match(message.text, /Media URI: media:\/\/inbound\/example-image\.png---test-id/);
   assert.match(message.text, /Downloaded size: 1234 bytes/);
+
+  const nestedMessage = await extractWhatsappMessage({
+    from: { phone_number: "+15551234567" },
+    type: "whatsapp",
+    whatsapp: {
+      messages: [
+        {
+          type: "image",
+          image: {
+            id: "a521caac-4127-4801-997d-f954af4d7154",
+            link: "https://media.telnyx.com/messages/nested-image.jpg",
+            mime_type: "image/jpeg",
+            caption: "What do you see here",
+          },
+        },
+      ],
+    },
+  });
+  assert.match(nestedMessage.text, /Caption: What do you see here/);
+  assert.match(nestedMessage.text, /Local media path: \/home\/node\/\.openclaw\/media\/inbound\/image-a521caac-4127-4801-997d-f954af4d7154---test-id/);
+  assert.match(nestedMessage.text, /Media URI: media:\/\/inbound\/image-a521caac-4127-4801-997d-f954af4d7154---test-id/);
 });
 
 test("rejects unsafe media URLs before download", async () => {

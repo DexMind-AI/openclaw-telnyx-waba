@@ -215,16 +215,19 @@ function locationText(payload) {
   return `The user shared their WhatsApp location: latitude ${location.latitude}, longitude ${location.longitude}.${suffix}`;
 }
 
-function hasMedia(value) {
+function hasMedia(value, seen = new WeakSet()) {
   if (!value || typeof value !== "object") return false;
-  if (Array.isArray(value)) return value.some(hasMedia);
+  if (seen.has(value)) return false;
+  seen.add(value);
+  if (Array.isArray(value)) return value.some((item) => hasMedia(item, seen));
 
   if (Array.isArray(value.media) && value.media.length > 0) return true;
   if (value.image || value.video || value.audio || value.document || value.sticker) return true;
   if (value.whatsapp_message?.image || value.whatsapp_message?.video || value.whatsapp_message?.audio) return true;
   if (value.whatsapp_message?.document || value.whatsapp_message?.sticker) return true;
   if (value.type && ["image", "video", "audio", "document", "sticker"].includes(String(value.type).toLowerCase())) return true;
-  return false;
+
+  return Object.values(value).some((nested) => hasMedia(nested, seen));
 }
 
 function mediaTypeFromMime(mimeType) {
@@ -369,6 +372,7 @@ function reactionDetails(value) {
 function collectAttachments(payload) {
   const attachments = [];
   const seen = new Set();
+  const visited = new WeakSet();
 
   const addAttachment = (attachment) => {
     if (!attachment) return;
@@ -388,6 +392,8 @@ function collectAttachments(payload) {
 
   const visit = (value) => {
     if (!value || typeof value !== "object") return;
+    if (visited.has(value)) return;
+    visited.add(value);
     if (Array.isArray(value)) {
       for (const item of value) visit(item);
       return;
@@ -408,8 +414,7 @@ function collectAttachments(payload) {
     }
 
     if (value.reaction) addAttachment(reactionDetails(value.reaction));
-    if (value.whatsapp_message) visit(value.whatsapp_message);
-    if (Array.isArray(value.parts)) visit(value.parts);
+    for (const nested of Object.values(value)) visit(nested);
   };
 
   visit(payload);

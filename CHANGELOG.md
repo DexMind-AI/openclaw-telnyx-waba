@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7
+
+- Widened WABA media detection and attachment collection to find image/video/audio/document/sticker payloads under nested Telnyx/Meta wrapper objects.
+
 ## 0.1.6
 
 - Widened WABA location detection to find latitude/longitude pairs under any nested Telnyx/Meta wrapper instead of only a fixed list of wrapper keys.
