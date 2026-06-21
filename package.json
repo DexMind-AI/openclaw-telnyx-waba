@@ -6,12 +6,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/arnd-dexmind/openclaw-telnyx-waba.git"
+    "url": "git+https://github.com/DexMind-AI/openclaw-telnyx-waba.git"
   },
   "bugs": {
-    "url": "https://github.com/arnd-dexmind/openclaw-telnyx-waba/issues"
+    "url": "https://github.com/DexMind-AI/openclaw-telnyx-waba/issues"
   },
-  "homepage": "https://github.com/arnd-dexmind/openclaw-telnyx-waba#readme",
+  "homepage": "https://github.com/DexMind-AI/openclaw-telnyx-waba#readme",
   "scripts": {
     "check": "node --check dist/index.js",
     "test": "node --test test/*.test.mjs",
